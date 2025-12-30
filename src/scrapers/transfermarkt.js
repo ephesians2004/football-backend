@@ -1,73 +1,76 @@
+/**
+ * Transfermarkt – Squads & Market Values
+ * WARNING: Site has anti-scrape protections — keep usage low
+ */
+
 const axios = require("axios");
 const cheerio = require("cheerio");
 
-// scrape club squads (TOP 20 only — to protect server)
-module.exports = async function(){
+async function fetchSquads() {
   try {
-    const html = await axios.get(
-      "https://www.transfermarkt.com/spieler-statistik/marktwertanalyse/statistik",
+    const r = await axios.get(
+      "https://www.transfermarkt.com/uefa-champions-league/startseite/wettbewerb/CL",
       {
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0)",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
           "Accept": "text/html"
         },
-        timeout: 12000
+        timeout: 10000
       }
-    ).then(r => r.data);
+    );
 
-    const $ = cheerio.load(html);
-    const rows = [];
+    const $ = cheerio.load(r.data);
+    const out = [];
 
-    $("table.items tbody tr").each((i, el) => {
-      if (i >= 50) return;
-      const cols = $(el).find("td");
-      rows.push({
-        name: $(cols[1]).text().trim(),
-        club: $(cols[2]).text().trim(),
-        value: $(cols[5]).text().trim(),
-        age: $(cols[3]).text().trim()
-      });
+    $("table.items > tbody > tr").each((_, tr) => {
+      const team = $(tr).find(".hauptlink .vereinprofil_tooltip").text().trim();
+      const value = $(tr).find("td.rechts.hauptlink").text().trim();
+
+      if (team) out.push({ team, value });
     });
 
-    return rows;
+    return out;
 
   } catch (e) {
-    console.log("⚠️ Transfermarkt squad error:", e.message);
+    console.log("⚠️ Transfermarkt squads error:", e.message);
     return [];
   }
+}
+
+async function fetchValuesOnly() {
+  try {
+    const r = await axios.get(
+      "https://www.transfermarkt.com/market-values/uefa-champions-league/marktwerte/wettbewerb/CL",
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          "Accept": "text/html"
+        },
+        timeout: 8000
+      }
+    );
+
+    const $ = cheerio.load(r.data);
+    const out = [];
+
+    $("table.items > tbody > tr").each((_, tr) => {
+      const name = $(tr).find(".hauptlink > a").text().trim();
+      const value = $(tr).find(".rechts.hauptlink").text().trim();
+      if (name) out.push({ name, value });
+    });
+
+    return out;
+
+  } catch (e) {
+    console.log("⚠️ Transfermarkt values error:", e.message);
+    return [];
+  }
+}
+
+module.exports = async function(){
+  return await fetchSquads();
 };
 
-// ---- second export: aggregated club value ----
 module.exports.getValues = async function(){
-  try {
-    const html = await axios.get(
-      "https://www.transfermarkt.com/wettbewerbe/europa",
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0)",
-          "Accept": "text/html"
-        },
-        timeout: 12000
-      }
-    ).then(r => r.data);
-
-    const $ = cheerio.load(html);
-    const result = [];
-
-    $("table.items tbody tr").each((i, el) => {
-      if (i >= 50) return;
-      const cols = $(el).find("td");
-      result.push({
-        league: $(cols[1]).text().trim(),
-        avgValue: $(cols[4]).text().trim(),
-        totalValue: $(cols[3]).text().trim()
-      });
-    });
-
-    return result;
-
-  } catch (e) {
-    console.log("⚠️ Transfermarkt VALUE error:", e.message);
-    return [];
-  }
+  return await fetchValuesOnly();
 };
