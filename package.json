@@ -1,0 +1,16 @@
+{
+  "name": "football-backend",
+  "version": "1.0.0",
+  "main": "src/server/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "axios": "^1.6.7",
+    "node-cron": "^3.0.3",
+    "redis": "^4.6.7",
+    "cheerio": "^1.0.0-rc.12"
+  }
+}
