@@ -10,9 +10,11 @@ let _data = {
 
 async function safeScrape(){
   try{
-    const f = await fotmob();
-    _data.fixtures = f;
-  }catch(e){}
+    const fixtures = await fotmob();
+    _data.fixtures = fixtures;
+  } catch (e) {
+    console.log("FotMob scrape failed:", e.message);
+  }
 }
 
 function latestData(){ return _data; }
