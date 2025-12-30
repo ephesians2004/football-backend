@@ -1,31 +1,55 @@
+/**
+ * SERVER ENTRYPOINT
+ * Boots Express + Cron + Cache lifecycle
+ */
+
 const express = require("express");
+const cors = require("cors");
 const cron = require("node-cron");
-const api = require("./routes");
-const { scrapeCategory, preloadStartup } = require("../cron/scrapeAll");
+
+const routes = require("./routes");
+const cache = require("../utils/cache");
+const { scrapeAll } = require("../cron/scrapeAll");
 
 const app = express();
-const PORT = Number(process.env.PORT) || 8080;
-
+app.use(cors());
 app.use(express.json());
 
-// Health check
-app.get("/health", (req, res) => res.json({ status: "ok", ts: Date.now() }));
+// register API endpoints
+app.use("/", routes);
 
-// API endpoints
-app.use("/", api);
+// HEALTH CHECK
+app.get("/health", (req, res) => res.json({ status: "ok" }));
 
-// Run staggered scraping — ALL categories spaced to avoid CPU overload
-cron.schedule("*/30 * * * *", async () => {
-  console.log("⏳ Cron triggered — staggered scrape begins");
-  await scrapeCategory("fixtures");
-  await scrapeCategory("live");
-  await scrapeCategory("injuries");
-  await scrapeCategory("predictions");
-  await scrapeCategory("squads");
-  await scrapeCategory("values");
+// --------- START SERVER ----------
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Backend running on ${PORT}`);
 });
 
-// On startup → load historical cache so data is available immediately
-setTimeout(() => preloadStartup(), 3000);
+// --------- CRON (every 30 min) ----------
+cron.schedule("*/30 * * * *", async () => {
+  try {
+    await scrapeAll();
+  } catch (e) {
+    console.log("⚠️ CRON scrape error", e.message);
+  }
+});
 
-app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Backend running on :${PORT}`));
+// delay first scrape by 5 seconds (prevents Railway boot timeout)
+setTimeout(() => {
+  scrapeAll();
+}, 5000);
+
+// graceful shutdown
+process.on("SIGTERM", async () => {
+  console.log("🔻 Shutdown");
+  await cache.close();
+  process.exit(0);
+});
+
+process.on("SIGINT", async () => {
+  console.log("🔻 Shutdown SIGINT");
+  await cache.close();
+  process.exit(0);
+});
