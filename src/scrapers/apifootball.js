@@ -26,6 +26,7 @@ module.exports = async function scrapeApiFootball() {
       }
     );
 
+    
     const arr = r.data?.response || [];
     return arr.map(x => ({
       id: x.fixture?.id,
