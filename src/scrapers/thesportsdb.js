@@ -1,48 +1,63 @@
 /**
- * API-Football – Fixtures (Direct API)
- * Docs: https://www.api-football.com/documentation
+ * TheSportsDB – Fixtures
+ * Free source – schedule based on leagues
+ * Docs: https://www.thesportsdb.com/api.php
  */
 
 const axios = require("axios");
-const KEY = process.env.API_FOOTBALL_KEY;
 
-module.exports = async function scrapeApiFootball() {
-  if (!KEY) {
-    console.log("⚠️ Missing API_FOOTBALL_KEY");
-    return [];
-  }
+// EXAMPLE league IDs — we fetch multiple for more fixtures
+const LEAGUES = [
+  "4328",  // English Premier League
+  "4335",  // Spanish La Liga
+  "4331",  // German Bundesliga
+  "4332",  // Italian Serie A
+  "4334",  // French Ligue 1
+];
 
+async function fetchLeague(id) {
   try {
-    const today = new Date().toISOString().slice(0, 10);
-
     const r = await axios.get(
-      `https://v3.football.api-sports.io/fixtures?date=${today}`,
+      `https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${new Date().toISOString().slice(0, 10)}&l=${id}`,
       {
-        headers: {
-          "x-apisports-key": KEY,
-          "User-Agent": "Mozilla/5.0"
-        },
+        headers: { "User-Agent": "Mozilla/5.0" },
         timeout: 10000
       }
     );
+    const arr = r.data?.events || [];
 
-    const arr = r.data?.response || [];
-    return arr.map(x => ({
-      id: x.fixture?.id,
-      home: x.teams?.home?.name,
-      away: x.teams?.away?.name,
-      timestamp: x.fixture?.timestamp * 1000,
-      league: x.league?.name,
-      country: x.league?.country,
-      venue: x.fixture?.venue?.name,
-      status: x.fixture?.status?.short,
-      logoHome: x.teams?.home?.logo,
-      logoAway: x.teams?.away?.logo,
-      round: x.league?.round,
+    return arr.map(m => ({
+      id: m.idEvent,
+      home: m.strHomeTeam,
+      away: m.strAwayTeam,
+      timestamp: new Date(`${m.dateEvent}T${m.strTime}`).getTime(),
+      league: m.strLeague,
+      country: m.strCountry || "",
+      imageHome: m.strHomeTeamBadge || null,
+      imageAway: m.strAwayTeamBadge || null,
+      round: m.intRound || null,
     }));
 
   } catch (e) {
-    console.log("⚠️ API-Football error", e.message);
+    console.log("⚠️ TheSportsDB error", id, e.message);
+    return [];
+  }
+}
+
+module.exports = async function scrapeSportsDb() {
+  try {
+    const promises = LEAGUES.map(id => fetchLeague(id));
+    const results = await Promise.allSettled(promises);
+
+    const merged = [];
+    results.forEach(r => {
+      if (r.status === "fulfilled") merged.push(...r.value);
+    });
+
+    return merged;
+
+  } catch (e) {
+    console.log("⚠️ TheSportsDB global error", e.message);
     return [];
   }
 };
