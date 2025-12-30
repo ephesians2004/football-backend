@@ -1,10 +1,19 @@
-const axios = require("axios");
-const KEY = process.env.ODDS_API_KEY;   // MUST be set in Railway env
+/**
+ * TheOddsAPI – Odds data for Soccer
+ * Docs: https://the-odds-api.com/liveapi/
+ *
+ * Returned markets:
+ * - h2h (Home / Draw / Away)
+ * - btts (Both Teams To Score)
+ * - totals (Over/Under 2.5 goals)
+ */
 
-// Fetch betting odds for soccer fixtures
-module.exports = async function(){
+const axios = require("axios");
+const KEY = process.env.ODDS_API_KEY;
+
+async function fetchOdds() {
   if (!KEY) {
-    console.log("⚠️ ODDS_API_KEY missing");
+    console.log("⚠️ Missing ODDS_API_KEY");
     return [];
   }
 
@@ -14,38 +23,30 @@ module.exports = async function(){
       {
         headers: {
           "User-Agent": "Mozilla/5.0",
-          "Accept": "application/json"
+          Accept: "application/json"
         },
         timeout: 10000
       }
     );
 
-    const events = r.data || [];
-
-    return events.map(ev => ({
-      id: ev.id,
-      home: ev.home_team,
-      away: ev.away_team,
-      bookmakers: ev.bookmakers?.map(b => ({
-        name: b.key,
-        markets: b.markets
-      })) || []
-    }));
+    return r.data || [];
 
   } catch (e) {
-    console.log("⚠️ Odds API error:", e.message);
+    console.log("⚠️ OddsAPI error:", e.message);
     return [];
   }
-};
+}
 
-// Convert odds list into a lookup table: "Home vs Away" => oddsObject
-module.exports.toMap = function(oddsList) {
+// Convert array → lookup: "Home vs Away" => { odds }
+function convertToMap(list) {
   const map = {};
-  oddsList.forEach(ev => {
-    const key = `${ev.home} vs ${ev.away}`;
-    const book = ev.bookmakers?.[0];
 
+  list.forEach(ev => {
+    const key = `${ev.home_team} vs ${ev.away_team}`;
+
+    const book = ev.bookmakers?.[0]; // first bookmaker only
     if (!book) return;
+
     const markets = book.markets;
 
     const h2h = markets.find(m => m.key === "h2h");
@@ -62,4 +63,12 @@ module.exports.toMap = function(oddsList) {
   });
 
   return map;
+}
+
+module.exports = async function() {
+  return await fetchOdds();
+};
+
+module.exports.toMap = function(list) {
+  return convertToMap(list);
 };
