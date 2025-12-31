@@ -1,45 +1,26 @@
-/**
- * FlashScore – Extended Match Stats
- * Adds: yellow cards, red cards, corners, possession
- */
-
 const axios = require("axios");
 
-module.exports = async function scrapeFlashscoreStats() {
+module.exports = async function flashStats() {
   try {
-    const r = await axios.get(
-      "https://d.flashscore.com/x/feed_d_stat/?sport=football",
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0)",
-          "Accept": "*/*"
-        },
-        timeout: 8000
-      }
-    );
+    const url = "https://www.flashscore.com.ua/flashscore-data/match-details.json";
 
-    if (!r.data) return [];
-
-    const stats = [];
-    const lines = r.data.split("\n");
-
-    lines.forEach(line => {
-      if (!line.startsWith("STAT")) return;
-      const c = line.split("|");
-
-      stats.push({
-        id: c[2],
-        yellow: c[6] || null,
-        red: c[7] || null,
-        corners: c[8] || null,
-        possession: c[9] || null
-      });
+    const r = await axios.get(url, {
+      headers: { "User-Agent": "Mozilla/5.0" }
     });
 
-    return stats;
+    const list = r.data?.stats ?? [];
+    return list.map(s => ({
+      id: s.id,
+      ballPoss: s.possession,
+      shots: s.shots,
+      onTarget: s.shotsOnTarget,
+      corners: s.corners,
+      fouls: s.fouls,
+      cards: s.cards
+    }));
 
-  } catch (e) {
-    console.log("⚠️ FlashScore Stats error:", e.message);
+  } catch (err) {
+    console.log("⚠️ FlashScore Stats error:", err.response?.status, err.message);
     return [];
   }
 };
