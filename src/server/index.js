@@ -1,15 +1,24 @@
-require("dotenv").config();
 const express = require("express");
 const app = express();
-const router = require("./routes");
-const { scrapeAll } = require("./scraperInit");
+const routes = require("./routes");
+require("dotenv").config();
+const cron = require("node-cron");
+const { scrapeAll } = require("../cron/scrapeAll");
+
+// trust proxy for Railway
+app.set("trust proxy", 1);
 
 const PORT = process.env.PORT || 8080;
 
 app.use(express.json());
-app.use("/", router);
+app.use("/", routes);
 
-setInterval(scrapeAll, 60 * 1000);   // auto refresh each minute
-scrapeAll();                         // first run
+app.listen(PORT, () => {
+  console.log(`🚀 Backend running on ${PORT}`);
+});
 
-app.listen(PORT, ()=> console.log(`🚀 Server live on ${PORT}`));
+// CRON every 2 minutes
+cron.schedule("*/2 * * * *", async () => {
+  console.log("⏱ Cron scrape starting...");
+  await scrapeAll();
+});
