@@ -4,7 +4,6 @@ const router = express.Router();
 const cache = require("../utils/cache");
 
 const fotmob = require("../scrapers/fotmob");
-const apiFootball = require("../scrapers/apiFootball");
 const sportsdb = require("../scrapers/thesportsdb");
 const scores365 = require("../scrapers/scores365");
 const injuries = require("../scrapers/injuriesEspn");
