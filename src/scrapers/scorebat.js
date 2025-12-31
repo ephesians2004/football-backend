@@ -1,28 +1,19 @@
-const axios = require("axios");
-
-/**
- * ScoreBat — Simple JSON feed
- * Live matches not always present, but great fallback
- */
-const URL = "https://www.scorebat.com/video-api/v3/";
+const { get } = require("../utils/http");
 
 async function getLive() {
-  try {
-    const { data } = await axios.get(URL, { timeout: 6000 });
+  const data = await get("https://www.scorebat.com/video-api/v3/");
+  if (!data?.response) return [];
 
-    return (data.response || []).map(x => ({
-      id: x.id || null,
-      title: x.title,
-      home: x.title?.split(" vs ")[0] || "",
-      away: x.title?.split(" vs ")[1] || "",
-      league: x.competition,
-      date: x.date,
-      thumbnail: x.thumbnail,
-      source: "scorebat"
-    }));
-  } catch {
-    return [];
-  }
+  return data.response.map(v => ({
+    id: null,
+    title: v.title,
+    home: v.title,
+    away: "",
+    league: v.competition,
+    date: v.date,
+    thumbnail: v.thumbnail,
+    source: "scorebat"
+  }));
 }
 
 module.exports = { getLive };
