@@ -1,35 +1,42 @@
-const { get } = require("../utils/http");
-const KEY = process.env.FOOTBALLDATA_KEY;
+// src/scrapers/footballdata.js
+const axios = require("axios");
 
-async function fetchRange(days = 7) {
-  const now = new Date();
-  const today = now.toISOString().split("T")[0];
+const API_KEY = process.env.FOOTBALLDATA_KEY;
+const BASE = "https://api.football-data.org/v4";
 
-  const future = new Date();
-  future.setDate(now.getDate() + days);
-  const to = future.toISOString().split("T")[0];
+async function getFixtures() {
+  try {
+    const leagues = [
+      "PL", "PD", "SA", "BL1", "FL1", "PPL", "DED", "CL" // England, Spain, Italy, Germany, France, Portugal, Netherlands, UCL
+    ];
 
-  const leagues = ["PL","PD","SA","BL1","FL1","DED","BSA","PPL"]; // add more anytime
-  let all = [];
+    let results = [];
 
-  for (let code of leagues) {
-    const url = `https://api.football-data.org/v4/competitions/${code}/matches?dateFrom=${today}&dateTo=${to}`;
+    for (const league of leagues) {
+      const res = await axios.get(`${BASE}/competitions/${league}/matches`, {
+        headers: { "X-Auth-Token": API_KEY }
+      });
 
-    const data = await get(url, { "X-Auth-Token": KEY });
-    if (!data?.matches) continue;
+      const arr = res.data.matches || [];
 
-    all.push(
-      ...data.matches.map(m => ({
-        id: m.id,
-        home: m.homeTeam?.name,
-        away: m.awayTeam?.name,
-        date: m.utcDate,
-        league: m.competition?.name,
-        status: m.status
-      }))
-    );
+      arr.forEach(m => {
+        results.push({
+          id: m.id,
+          home: m.homeTeam?.name,
+          away: m.awayTeam?.name,
+          date: m.utcDate,
+          status: m.status,
+          league,
+          source: "football-data"
+        });
+      });
+    }
+
+    return results;
+  } catch (err) {
+    console.log("⚠ football-data error:", err.response?.status || err.message);
+    return [];
   }
-  return all;
 }
 
-module.exports = fetchRange;
+module.exports = { getFixtures };
