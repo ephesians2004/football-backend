@@ -1,24 +1,12 @@
 /**
- * API Routes – SAFE MODE (No crashes if scraper missing)
+ * Express API Routes – crash-proof, safe-require enabled
  */
 
 const express = require("express");
 const router = express.Router();
 const cache = require("../utils/cache");
 
-// Scrapers (wrapped safely)
-const fotmob = safeRequire("../scrapers/fotmob");
-const sportsdb = safeRequire("../scrapers/thesportsdb");
-const scores365 = safeRequire("../scrapers/scores365");
-const injuries = safeRequire("../scrapers/injuriesEspn");
-const transfermarkt = safeRequire("../scrapers/transfermarkt");
-const footystats = safeRequire("../scrapers/footystats");
-const flashStats = safeRequire("../scrapers/flashscoreStats");
-
-// Cron Aggregation
-const { runFixturesOnce, runLiveOnce } = require("../cron/scrapeAll");
-
-// Helper – module loader that never throws
+// Helper: require module safely
 function safeRequire(path) {
   try { return require(path); }
   catch (e) {
@@ -27,6 +15,18 @@ function safeRequire(path) {
   }
 }
 
+// Scrapers (never crash)
+const fotmob = safeRequire("../scrapers/fotmob");
+const sportsdb = safeRequire("../scrapers/thesportsdb");
+const scores365 = safeRequire("../scrapers/scores365");
+const injuries = safeRequire("../scrapers/injuriesEspn");
+const transfermarkt = safeRequire("../scrapers/transfermarkt");
+const footystats = safeRequire("../scrapers/footystats");
+const flashStats = safeRequire("../scrapers/flashscoreStats");
+
+// Aggregation (cron)
+const { runFixturesOnce, runLiveOnce } = require("../cron/scrapeAll");
+
 router.get("/", (req, res) => {
   res.status(200).send("⚽ Football Backend API Running");
 });
@@ -34,8 +34,15 @@ router.get("/", (req, res) => {
 // ---- HEALTH ----
 router.get("/health", async (req, res) => {
   try {
-    const redisOk = cache.client && cache.client.status === "ready";
-    return res.json({ status: "ok", redis: redisOk, time: Date.now() });
+    const redisOk =
+      cache.client &&
+      (cache.client.status === "ready" || cache.client.connected === true);
+
+    return res.json({
+      status: "ok",
+      redis: redisOk,
+      time: Date.now()
+    });
   } catch {
     return res.json({ status: "ok", redis: false, time: Date.now() });
   }
@@ -50,10 +57,11 @@ router.get("/fixtures", async (req, res) => {
 
     const data = await runFixturesOnce();
     await cache.set(key, JSON.stringify(data), 600);
-    return res.json(data);
+    res.json(data);
+
   } catch (err) {
-    console.log("❌ Fixtures err:", err.message);
-    return res.json([]);
+    console.log("❌ Fixtures error:", err.message);
+    res.json([]);
   }
 });
 
@@ -66,29 +74,30 @@ router.get("/live", async (req, res) => {
 
     const data = await runLiveOnce();
     await cache.set(key, JSON.stringify(data), 30);
-    return res.json(data);
+    res.json(data);
+
   } catch (err) {
-    console.log("❌ Live err:", err.message);
-    return res.json([]);
+    console.log("❌ Live error:", err.message);
+    res.json([]);
   }
 });
 
 // ---- INJURIES ----
 router.get("/injuries", async (req, res) => {
-  try { return res.json(await injuries()); }
-  catch { return res.json([]); }
+  try { res.json(await injuries()); }
+  catch { res.json([]); }
 });
 
 // ---- SQUADS ----
-router.get("/squads", async (_, res) => {
-  try { return res.json(await transfermarkt()); }
-  catch { return res.json([]); }
+router.get("/squads", async (req, res) => {
+  try { res.json(await transfermarkt()); }
+  catch { res.json([]); }
 });
 
 // ---- VALUE ----
-router.get("/value", async (_, res) => {
-  try { return res.json(await transfermarkt.getValues()); }
-  catch { return res.json([]); }
+router.get("/value", async (req, res) => {
+  try { res.json(await transfermarkt.getValues()); }
+  catch { res.json([]); }
 });
 
 // ---- AI PREDICTIONS ----
@@ -97,20 +106,20 @@ router.get("/predictions", async (req, res) => {
     const fixtures = await runFixturesOnce();
     const inj = await injuries();
     const values = await transfermarkt.getValues() ?? [];
-    return res.json(await footystats(fixtures, inj, [], values));
+    res.json(await footystats(fixtures, inj, [], values));
   } catch (err) {
     console.log("❌ Prediction error:", err.message);
-    return res.json([]);
+    res.json([]);
   }
 });
 
-// ---- FLASHscore LIVE STATS ----
-router.get("/stats/live", async (_, res) => {
-  try { return res.json(await flashStats()); }
-  catch { return res.json([]); }
+// ---- FLASHscore STATS ----
+router.get("/stats/live", async (req, res) => {
+  try { res.json(await flashStats()); }
+  catch { res.json([]); }
 });
 
-// ---- LEGACY COMBINATION ENDPOINT ----
+// ---- LEGACY ----
 router.get("/data", async (req, res) => {
   try {
     const fixtures = await runFixturesOnce();
@@ -120,10 +129,13 @@ router.get("/data", async (req, res) => {
     const value = await transfermarkt.getValues();
     const pred = await footystats(fixtures, inj, [], value);
 
-    return res.json({ fixtures, live, injuries: inj, squads, value, predictions: pred });
+    res.json({ fixtures, live, injuries: inj, squads, value, predictions: pred });
   } catch (err) {
-    console.log("❌ /data error:", err.message);
-    return res.json({ fixtures: [], live: [], injuries: [], squads: [], value: [], predictions: [] });
+    console.log("❌ /data ERROR:", err.message);
+    res.json({
+      fixtures: [], live: [], injuries: [],
+      squads: [], value: [], predictions: []
+    });
   }
 });
 
