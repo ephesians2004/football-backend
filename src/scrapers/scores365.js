@@ -1,39 +1,31 @@
-/**
- * 365Scores – Fixtures scraper
- * Unofficial feed — JSON endpoint
- */
-
 const axios = require("axios");
 
-module.exports = async function scrape365Scores() {
+module.exports = async function scores365() {
   try {
-    const today = new Date().toISOString().slice(0, 10);
-
     const r = await axios.get(
-      `https://webws.365scores.com/web/games/?langId=1&country=ENG&sports=1&date=${today}`,
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0",
-          "Accept": "application/json"
-        },
-        timeout: 10000
-      }
+      "https://webws.365scores.com/web/games/current/?langId=1&timezoneName=Africa/Accra",
+      { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 10000 }
     );
 
-    const arr = r.data?.games || [];
-    return arr.map(x => ({
-      id: x.id,
-      home: x.homeCompetitor?.name,
-      away: x.awayCompetitor?.name,
-      timestamp: x.startTime ? Number(x.startTime) : null,
-      league: x.competitionDisplayName || "",
-      country: x.country?.name || "",
-      stage: x.stage || "",
-      isLive: x.status?.type === "inprogress" ? true : false,
-    }));
+    const list = [];
+    const games = r.data?.games ?? [];
 
-  } catch (e) {
-    console.log("⚠️ 365Scores error", e.message);
+    games.forEach(g => {
+      if (g.sportId !== 1) return; // 1 = soccer
+      list.push({
+        id: g.id,
+        home: g.homeName,
+        away: g.awayName,
+        score: `${g.homeScore ?? 0}-${g.awayScore ?? 0}`,
+        minute: g.gameTime,
+        league: g.competitionDisplayName,
+        country: g.countryName
+      });
+    });
+
+    return list;
+  } catch (err) {
+    console.log("⚠️ 365Scores error:", err.message);
     return [];
   }
 };
