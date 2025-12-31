@@ -33,7 +33,12 @@ router.get("/", (req, res) => {
 
 // ---- HEALTH ----
 router.get("/health", async (req, res) => {
-  res.json({ status: "ok", redis: cache.isConnected(), time: Date.now() });
+  try {
+    const redisOk = cache.client && cache.client.status === "ready";
+    return res.json({ status: "ok", redis: redisOk, time: Date.now() });
+  } catch {
+    return res.json({ status: "ok", redis: false, time: Date.now() });
+  }
 });
 
 // ---- FIXTURES ----
