@@ -1,6 +1,6 @@
 const axios = require("axios");
 
-module.exports = async function oddsApi() {
+async function fetchOdds() {
   try {
     const API_KEY = process.env.ODDS_API_KEY;
     if (!API_KEY) return [];
@@ -12,19 +12,37 @@ module.exports = async function oddsApi() {
       timeout: 10000
     });
 
-    return r.data?.map(event => ({
-      id: event.id,
-      commence: event.commence_time,
-      home: event.home_team,
-      away: event.away_team,
-      bookmakers: event.bookmakers?.map(b => ({
-        name: b.title,
-        odds: b.markets?.[0]?.outcomes
-      }))
-    })) ?? [];
-
+    return r.data ?? [];
   } catch (err) {
-    console.log("⚠️ OddsAPI error:", err.response?.status, err.message);
+    console.log("⚠️ OddsAPI fetch error:", err.response?.status, err.message);
     return [];
   }
-};
+}
+
+async function toMap() {
+  const data = await fetchOdds();
+  const map = {};
+
+  for (const ev of data) {
+    const home = ev.home_team;
+    const away = ev.away_team;
+    const id = ev.id;
+
+    const odds = ev.bookmakers?.[0]?.markets?.[0]?.outcomes ?? [];
+
+    const homeO = odds.find(o => o.name === home)?.price ?? null;
+    const drawO = odds.find(o => o.name === "Draw")?.price ?? null;
+    const awayO = odds.find(o => o.name === away)?.price ?? null;
+
+    map[id] = { home: homeO, draw: drawO, away: awayO };
+  }
+
+  return map;
+}
+
+async function getOddsFor(matchId) {
+  const map = await toMap();
+  return map[matchId] ?? null;
+}
+
+module.exports = { fetch: fetchOdds, toMap, getOddsFor };
