@@ -7,20 +7,19 @@ const fotmob = require("../scrapers/fotmob");
 const apiFootball = require("../scrapers/apiFootball");
 const sportsdb = require("../scrapers/thesportsdb");
 const scores365 = require("../scrapers/scores365");
-const oddsapi = require("../scrapers/oddsapi");
-const flashStats = require("../scrapers/flashscoreLive");   // basic live only
+const oddsapi = require("../scrapers/oddsapi");          // FIX: use .toMap()
+const flashStats = require("../scrapers/flashscoreLive");
 const injuries = require("../scrapers/injuriesEspn");
 const cache = require("../utils/cache");
 
 // ---------------- RUN FIXTURES ONE TIME ---------------- //
 async function runFixturesOnce() {
   try {
-    const [fm, api, tdb, sc365, oddsRaw] = await Promise.allSettled([
+    const [fm, api, tdb, sc365] = await Promise.allSettled([
       fotmob(),
       apiFootball(),
       sportsdb(),
-      scores365(),
-      oddsapi()
+      scores365()
     ]);
 
     let base = [
@@ -32,15 +31,12 @@ async function runFixturesOnce() {
 
     base = base.slice(0, 200);
 
-    // attach odds
-    const map = oddsapi.toMap(oddsRaw.value || []);
-    const fixtures = base.map(fix => {
-      const key = `${fix.home} vs ${fix.away}`;
-      return {
-        ...fix,
-        odds: map[key] || null
-      };
-    });
+    // ---- ODDS ATTACH FIX ----
+    const oddsMap = await oddsapi.toMap();      // FIXED
+    const fixtures = base.map(fix => ({
+      ...fix,
+      odds: oddsMap[fix.id] || oddsMap[`${fix.home} vs ${fix.away}`] || null
+    }));
 
     return fixtures;
 
@@ -54,29 +50,28 @@ async function runFixturesOnce() {
 async function runLiveOnce() {
   try {
     const [basic, stats] = await Promise.allSettled([
-      flashStats(),                 // only flashscore line-based feed
-      require("../scrapers/flashscoreStats")() // extra stats
+      flashStats(),
+      require("../scrapers/flashscoreStats")()
     ]);
 
     const live = basic.value || [];
     const ext = stats.value || [];
 
     const map = {};
-    ext.forEach(row => map[row.id] = row);
+    ext.forEach(r => map[r.id] = r);
 
-    const merged = live.map(item => ({
-      ...item,
-      stats: map[item.id] || null
+    return live.map(row => ({
+      ...row,
+      stats: map[row.id] || null
     }));
 
-    return merged;
   } catch (e) {
     console.log("⚠️ runLiveOnce error:", e.message);
     return [];
   }
 }
 
-// ---------------- FULL TRIGGER FOR CRON ---------------- //
+// ---------------- FULL CRON TRIGGER ---------------- //
 async function scrapeAll() {
   console.log("🔄 SCRAPE START");
   const f = await runFixturesOnce();
