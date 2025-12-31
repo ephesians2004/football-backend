@@ -9,6 +9,7 @@ const cache = require("../utils/cache");
 // Scrapers (wrapped safely)
 const fotmob = safeRequire("../scrapers/fotmob");
 const sportsdb = safeRequire("../scrapers/thesportsdb");
+const oddsApi = require("../scrapers/oddsApi");
 const scores365 = safeRequire("../scrapers/scores365");
 const injuries = safeRequire("../scrapers/injuriesEspn");
 const transfermarkt = safeRequire("../scrapers/transfermarkt");
@@ -29,6 +30,11 @@ function safeRequire(path) {
 
 router.get("/", (req, res) => {
   res.status(200).send("⚽ Football Backend API Running");
+});
+
+router.get("/odds", async (req, res) => {
+  try { res.json(await oddsApi()); }
+  catch { res.json([]); }
 });
 
 // ---- HEALTH ----
