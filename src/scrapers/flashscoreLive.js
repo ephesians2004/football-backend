@@ -1,50 +1,29 @@
-/**
- * FlashScore – LIVE MATCHES
- * Returns: id, home, away, score, minute, status
- *
- * Source feed: hidden undocumented FlashScore feed
- */
-
 const axios = require("axios");
 
-module.exports = async function scrapeFlashscoreLive() {
+module.exports = async function flashscoreLive() {
   try {
     const r = await axios.get(
       "https://d.flashscore.com/x/feed/f_1_0_3_en_1",
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)",
-          "Referer": "https://www.flashscore.com/",
-          "Accept": "*/*",
-        },
-        timeout: 8000
-      }
+      { headers: { "User-Agent": "Mozilla" }, timeout: 8000 }
     );
+    const rows = (r.data || "").split("\n");
+    const out = [];
 
-    if (!r.data) return [];
-
-    const rows = r.data.split("\n");
-    const matches = [];
-
-    rows.forEach(row => {
-      if (!row.startsWith("EV")) return;
-      const c = row.split("|");
-
-      matches.push({
-        id: c[1],
-        league: c[2],
-        home: c[3],
-        away: c[4],
-        score: c[5],
-        minute: c[6],
-        status: c[7]
-      });
+    rows.forEach(line => {
+      if (line.startsWith("EV;")) {
+        const c = line.split(";");
+        out.push({
+          id: c[1],
+          home: c[2],
+          away: c[3],
+          score: c[4]
+        });
+      }
     });
 
-    return matches;
-
-  } catch (e) {
-    console.log("⚠️ FlashScore LIVE error:", e.message);
+    return out;
+  } catch (err) {
+    console.log("⚠️ FlashScore LIVE error:", err.message);
     return [];
   }
 };
