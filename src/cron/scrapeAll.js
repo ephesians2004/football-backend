@@ -1,70 +1,61 @@
-const fotmob = require("../scrapers/fotmob");          // fixtures multiplier
-const sportsdb = require("../scrapers/thesportsdb");
-const scores365 = require("../scrapers/scores365");
-const bbcLive = require("../scrapers/bbcLive");
-const injuries = require("../scrapers/injuriesEspn");
-const oddsapi = require("../scrapers/oddsapi");
 const cache = require("../utils/cache");
 
-// ---------------- FIXTURES ---------------- //
+const fotmob = require("../scrapers/fotmob");
+const scores365 = require("../scrapers/scores365");
+const sportsdb = require("../scrapers/thesportsdb");
+const openliga = require("../scrapers/openligadb");
+const scorebat = require("../scrapers/scorebat");
+const injuries = require("../scrapers/injuriesEspn");
+
 async function runFixturesOnce() {
   try {
-    const [fm, tdb] = await Promise.allSettled([
+    const [fm, sc365, tdb, ol] = await Promise.allSettled([
       fotmob(),
-      sportsdb()
+      scores365(),
+      sportsdb(),
+      openliga.getFixtures()
     ]);
 
-    let base = [
+    let fixtures = [
       ...(fm.value || []),
-      ...(tdb.value || [])
+      ...(sc365.value || []),
+      ...(tdb.value || []),
+      ...(ol.value || [])
     ];
 
-    const odds = await oddsapi.toMap();
-    base = base.map(row => ({
-      ...row,
-      odds: odds[row.id] || null
-    }));
-
-    return base.slice(0, 200);
-  } catch (err) {
-    console.log("⚠️ runFixturesOnce error:", err.message);
+    return fixtures.slice(0, 200);
+  } catch {
     return [];
   }
 }
 
-// ---------------- LIVE ---------------- //
 async function runLiveOnce() {
   try {
-    const [live365, liveBBC] = await Promise.allSettled([
-      scores365(),
-      bbcLive()
+    const [scorebatRes, ol] = await Promise.allSettled([
+      scorebat.getLive(),
+      openliga.getLive()
     ]);
 
-    const live = [...(live365.value || []), ...(liveBBC.value || [])];
-    return live.slice(0, 150);
-  } catch (err) {
-    console.log("⚠️ runLiveOnce error:", err.message);
+    return [
+      ...(scorebatRes.value || []),
+      ...(ol.value || [])
+    ];
+  } catch {
     return [];
   }
 }
 
-// ---------------- CRON CORE ---------------- //
 async function scrapeAll() {
   console.log("🔄 SCRAPE START");
+  const fixtures = await runFixturesOnce();
+  const live = await runLiveOnce();
+  const inj = await injuries();
 
-  const f = await runFixturesOnce();
-  const l = await runLiveOnce();
-  const i = await injuries();
-
-  cache.set("fixtures", JSON.stringify(f), 600);
-  cache.set("live", JSON.stringify(l), 60);
-  cache.set("injuries", JSON.stringify(i), 300);
+  cache.set("fixtures", JSON.stringify(fixtures), 600);
+  cache.set("live", JSON.stringify(live), 60);
+  cache.set("injuries", JSON.stringify(inj), 300);
 
   console.log("🏁 SCRAPE DONE");
 }
 
-module.exports = {
-  scrapeAll,
-  runFixturesOnce,
-  runLiveOnce
-};
+module.exports = { scrapeAll, runFixturesOnce, runLiveOnce };
