@@ -1,32 +1,24 @@
 // src/scrapers/footballdataProxy.js
 const axios = require("axios");
 
-const BASE = "https://footballproxy.ephesians2004.workers.dev";
-const KEY = process.env.FOOTBALLDATA_KEY;  // MUST be set in Railway
+const PROXY_BASE = "https://footballproxy.ephesians2004.workers.dev";
 
-/**
- * Fetch today's fixtures via proxy
- */
 async function getFixtures() {
   try {
-    const url = `${BASE}?url=https://api.football-data.org/v4/matches&X-Auth-Token=${KEY}`;
-    const res = await axios.get(url, { timeout: 8000 });
+    const res = await axios.get(`${PROXY_BASE}/fixtures`);
+    const arr = res.data || [];
 
-    if (!res.data || !res.data.matches) return [];
-
-    return res.data.matches
-      .filter(m => m.status !== "FINISHED")
-      .map(m => ({
-        id: m.id,
-        home: m.homeTeam?.name,
-        away: m.awayTeam?.name,
-        date: m.utcDate,
-        league: m.competition?.name,
-        status: m.status
-      }));
-
-  } catch (err) {
-    console.log("⚠️ FootballDataProxy error", err?.response?.status);
+    return arr.map(x => ({
+      id: x.id,
+      home: x.home,
+      away: x.away,
+      date: x.date,
+      status: x.status,
+      league: x.league,
+      source: "proxy"
+    }));
+  } catch (e) {
+    console.log("⚠ FD proxy error:", e.message);
     return [];
   }
 }
