@@ -1,29 +1,27 @@
 /**
  * scrapeAll.js – Central cron + merge logic
- *
- * Runs:
- *  - Fixtures (FootballData → fallback → merged)
- *  - Live matches (ScoreBat → OpenLigaDB)
- *  - Injuries (ESPN, fallback-safe)
- *  - Saves results to Redis cache
  */
 
 const cache = require("../utils/cache");
 
-// Scrapers
-const footballData = require("../scrapers/footballdata");
-const fdProxy = require("../scrapers/footballdataProxy");
-const scorebat = require("../scrapers/scorebat");
-const openliga = require("../scrapers/openligadb");
-const injuries = require("../scrapers/injuriesEspn");
-
-// Normalize date → YYYY-MM-DD
-function today() {
-  return new Date().toISOString().split("T")[0];
+// SAFE LOADER (protects against missing scraper files)
+function safeRequire(path) {
+  try { return require(path); }
+  catch (e) {
+    console.log(`⚠️ Missing module (ignored): ${path}`);
+    return { getFixtures: async () => [], getLive: async () => [] };
+  }
 }
 
+// Scrapers
+const footballData = safeRequire("../scrapers/footballdata");
+const fdProxy = safeRequire("../scrapers/footballdataProxy");
+const scorebat = safeRequire("../scrapers/scorebat");
+const openliga = safeRequire("../scrapers/openligadb");
+const injuries = safeRequire("../scrapers/injuriesEspn");
+
 // ----------------------------------------------------------
-// FIXTURES (Primary + fallback)
+// FIXTURES – Primary + Proxy Fallback
 // ----------------------------------------------------------
 async function runFixturesOnce() {
   try {
@@ -37,7 +35,7 @@ async function runFixturesOnce() {
       ...(fdBackup.value || [])
     ];
 
-    // Remove duplicates by match key
+    // Remove duplicates
     const seen = new Set();
     list = list.filter(x => {
       const key = `${x.home}-${x.away}-${x.date}`;
@@ -46,18 +44,16 @@ async function runFixturesOnce() {
       return true;
     });
 
-    // filter → only today + future within 7 days
-    const dateNow = new Date();
+    // Filter future ≤ 7 days
+    const now = new Date();
     const weekAhead = new Date(Date.now() + 7 * 86400000);
 
     list = list.filter(m => {
       const d = new Date(m.date);
-      return d >= dateNow && d <= weekAhead;
+      return d >= now && d <= weekAhead;
     });
 
-    // Hard cap
     return list.slice(0, 200);
-
   } catch (e) {
     console.log("⚠️ runFixturesOnce error:", e.message);
     return [];
@@ -65,7 +61,7 @@ async function runFixturesOnce() {
 }
 
 // ----------------------------------------------------------
-// LIVE SCORES (Multi-fallback + filter to now)
+// LIVE SCORES – ScoreBat + OpenLiga fallback
 // ----------------------------------------------------------
 async function runLiveOnce() {
   try {
@@ -81,19 +77,16 @@ async function runLiveOnce() {
 
     if (live.length === 0) return [];
 
-    // filter – only matches close to current time
+    // Filter → ± 4 hours window
     const now = Date.now();
-    const oneHour = 60 * 60 * 1000;
-
+    const oneHr = 60 * 60 * 1000;
     live = live.filter(m => {
       if (!m.date) return true;
       const t = new Date(m.date).getTime();
-      return Math.abs(now - t) < oneHour * 4; // 4-hour radius window
+      return Math.abs(now - t) < oneHr * 4;
     });
 
-    // Hard cap
     return live.slice(0, 200);
-
   } catch (e) {
     console.log("⚠️ runLiveOnce error:", e.message);
     return [];
@@ -101,18 +94,17 @@ async function runLiveOnce() {
 }
 
 // ----------------------------------------------------------
-// CRON FULL TRIGGER
+// CRON – save to Redis
 // ----------------------------------------------------------
 async function scrapeAll() {
   console.log("🔄 SCRAPE START");
-  
+
   const fixtures = await runFixturesOnce();
   const live = await runLiveOnce();
-  const inj = await injuries().catch(() => []);
+  const inj = await injuries.get?.().catch?.(() => []) ?? [];
 
-  // Write → Redis
-  cache.set("fixtures", JSON.stringify(fixtures), 600); // refresh 10 min
-  cache.set("live", JSON.stringify(live), 30);          // refresh 30 sec
+  cache.set("fixtures", JSON.stringify(fixtures), 600);
+  cache.set("live", JSON.stringify(live), 30);
   cache.set("injuries", JSON.stringify(inj), 600);
 
   console.log(`🏁 SCRAPE DONE | fixtures=${fixtures.length} | live=${live.length}`);
