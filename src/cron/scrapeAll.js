@@ -1,27 +1,16 @@
-/**
- * scrapeAll.js – Central cron + merge logic
- */
+// src/cron/scrapeAll.js
 const cache = require("../utils/cache");
 
-// SAFE LOADER (protects against missing scraper files)
-function safeRequire(path) {
-  try { return require(path); }
-  catch (e) {
-    console.log(`⚠️ Missing module (ignored): ${path}`);
-    return { getFixtures: async () => [], getLive: async () => [] };
-  }
+const footballData = require("../scrapers/footballdata");
+const fdProxy = require("../scrapers/footballdataProxy");
+const scorebat = require("../scrapers/scorebat");
+const openliga = require("../scrapers/openligadb");
+const injuries = require("../scrapers/injuriesEspn");
+
+function today() {
+  return new Date().toISOString().split("T")[0];
 }
 
-// Scrapers
-const footballData = safeRequire("../scrapers/footballdata");
-const fdProxy = safeRequire("../scrapers/footballdataProxy");
-const scorebat = safeRequire("../scrapers/scorebat");
-const openliga = safeRequire("../scrapers/openligadb");
-const injuries = safeRequire("../scrapers/injuriesEspn");
-
-// ----------------------------------------------------------
-// FIXTURES – Primary + Proxy Fallback
-// ----------------------------------------------------------
 async function runFixturesOnce() {
   try {
     const [fd, fdBackup] = await Promise.allSettled([
@@ -34,7 +23,17 @@ async function runFixturesOnce() {
       ...(fdBackup.value || [])
     ];
 
-    // Remove duplicates
+    // filter → only today + next 7 days
+    const now = new Date();
+    const nextWeek = new Date(Date.now() + 7 * 86400000);
+
+    list = list.filter(m => {
+      if (!m.date) return false;
+      const d = new Date(m.date);
+      return d >= now && d <= nextWeek;
+    });
+
+    // dedupe
     const seen = new Set();
     list = list.filter(x => {
       const key = `${x.home}-${x.away}-${x.date}`;
@@ -43,25 +42,14 @@ async function runFixturesOnce() {
       return true;
     });
 
-    // Filter future ≤ 7 days
-    const now = new Date();
-    const weekAhead = new Date(Date.now() + 7 * 86400000);
-
-    list = list.filter(m => {
-      const d = new Date(m.date);
-      return d >= now && d <= weekAhead;
-    });
-
     return list.slice(0, 200);
-  } catch (e) {
-    console.log("⚠️ runFixturesOnce error:", e.message);
+
+  } catch (err) {
+    console.log("⚠ runFixturesOnce error:", err.message);
     return [];
   }
 }
 
-// ----------------------------------------------------------
-// LIVE SCORES – ScoreBat + OpenLiga fallback
-// ----------------------------------------------------------
 async function runLiveOnce() {
   try {
     const [sb, ol] = await Promise.allSettled([
@@ -74,33 +62,27 @@ async function runLiveOnce() {
       ...(ol.value || [])
     ];
 
-    if (live.length === 0) return [];
-
-    // Filter → ± 4 hours window
     const now = Date.now();
-    const oneHr = 60 * 60 * 1000;
+    const fourHours = 4 * 60 * 60 * 1000;
+
     live = live.filter(m => {
       if (!m.date) return true;
       const t = new Date(m.date).getTime();
-      return Math.abs(now - t) < oneHr * 4;
+      return Math.abs(now - t) < fourHours;
     });
 
     return live.slice(0, 200);
-  } catch (e) {
-    console.log("⚠️ runLiveOnce error:", e.message);
+  } catch (err) {
+    console.log("⚠ runLiveOnce error:", err.message);
     return [];
   }
 }
 
-// ----------------------------------------------------------
-// CRON – save to Redis
-// ----------------------------------------------------------
 async function scrapeAll() {
   console.log("🔄 SCRAPE START");
-
   const fixtures = await runFixturesOnce();
   const live = await runLiveOnce();
-  const inj = await injuries.get?.().catch?.(() => []) ?? [];
+  const inj = await injuries().catch(() => []);
 
   cache.set("fixtures", JSON.stringify(fixtures), 600);
   cache.set("live", JSON.stringify(live), 30);
@@ -109,8 +91,4 @@ async function scrapeAll() {
   console.log(`🏁 SCRAPE DONE | fixtures=${fixtures.length} | live=${live.length}`);
 }
 
-module.exports = {
-  scrapeAll,
-  runFixturesOnce,
-  runLiveOnce
-};
+module.exports = { scrapeAll, runFixturesOnce, runLiveOnce };
