@@ -1,37 +1,115 @@
+/**
+ * API Router
+ * Clean – Reliable – Safe (Never throws)
+ */
+
 const express = require("express");
 const router = express.Router();
 const cache = require("../utils/cache");
-const predict = require("../predictions/model");
-const { runFixtures, runLive } = require("./scraperInit");
 
-router.get("/", (_,res)=> res.send("⚽ Backend OK"));
-router.get("/health", (_,res)=> res.json({ok:true,time:Date.now()}));
+// scraper imports (direct – no safeRequire needed because we want errors visible during boot)
+const { runFixturesOnce, runLiveOnce } = require("../cron/scrapeAll");
+const injuries = require("../scrapers/injuriesEspn");
 
-router.get("/fixtures", async (req,res)=>{
-  const c = await cache.get("fixtures");
-  if (c) return res.json(JSON.parse(c));
-  const d = await runFixtures();
-  await cache.set("fixtures", JSON.stringify(d), 600);
-  res.json(d);
+// ----------------------------------------------------------
+// Helpers
+// ----------------------------------------------------------
+async function getCache(key) {
+  try {
+    const v = await cache.get(key);
+    if (!v) return null;
+    return JSON.parse(v);
+  } catch {
+    return null;
+  }
+}
+
+// Uniform response utility
+function ok(res, data) {
+  return res.status(200).json(data);
+}
+
+// ----------------------------------------------------------
+// Base Route
+// ----------------------------------------------------------
+router.get("/", (_, res) => {
+  res.status(200).send("⚽ Football Backend API Running");
 });
 
-router.get("/live", async (req,res)=>{
-  const c = await cache.get("live");
-  if (c) return res.json(JSON.parse(c));
-  const d = await runLive();
-  await cache.set("live", JSON.stringify(d), 30);
-  res.json(d);
+// ----------------------------------------------------------
+// Health
+// ----------------------------------------------------------
+router.get("/health", async (req, res) => {
+  let redisOK = false;
+  try { redisOK = cache.client && cache.client.status === "ready"; } catch {}
+  ok(res, {
+    status: "ok",
+    redis: redisOK,
+    time: Date.now()
+  });
 });
 
-router.get("/predictions", async (req,res)=>{
-  const fixtures = JSON.parse(await cache.get("fixtures") || "[]");
-  res.json(predict(fixtures));
+// ----------------------------------------------------------
+// Fixtures (global schedule)
+// ----------------------------------------------------------
+router.get("/fixtures", async (req, res) => {
+  const key = "fixtures";
+  const cached = await getCache(key);
+  if (cached) return ok(res, cached);
+
+  const data = await runFixturesOnce();
+  await cache.set(key, JSON.stringify(data), 600);
+  ok(res, data);
 });
 
-router.get("/data", async (req,res)=>{
-  const f = JSON.parse(await cache.get("fixtures") || "[]");
-  const l = JSON.parse(await cache.get("live") || "[]");
-  res.json({fixtures:f, live:l, predictions: predict(f)});
+// ----------------------------------------------------------
+// LIVE matches (ScoreBat + OpenLigaDB)
+// ----------------------------------------------------------
+router.get("/live", async (req, res) => {
+  const key = "live";
+  const cached = await getCache(key);
+  if (cached) return ok(res, cached);
+
+  const data = await runLiveOnce();
+  await cache.set(key, JSON.stringify(data), 30);
+  ok(res, data);
+});
+
+// ----------------------------------------------------------
+// Injuries – simple passthrough
+// ----------------------------------------------------------
+router.get("/injuries", async (req, res) => {
+  try {
+    const data = await injuries();
+    ok(res, data);
+  } catch {
+    ok(res, []);
+  }
+});
+
+// ----------------------------------------------------------
+// Combined Endpoint – for mobile apps
+// ----------------------------------------------------------
+router.get("/data", async (req, res) => {
+  try {
+    const [fixtures, live, inj] = await Promise.all([
+      getCache("fixtures").then(x => x || runFixturesOnce()),
+      getCache("live").then(x => x || runLiveOnce()),
+      injuries().catch(() => [])
+    ]);
+
+    ok(res, {
+      fixtures,
+      live,
+      injuries: inj
+    });
+  } catch {
+    ok(res, {
+      fixtures: [],
+      live: [],
+      injuries: []
+    });
+  }
 });
 
 module.exports = router;
